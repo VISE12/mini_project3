@@ -17,7 +17,7 @@
 using namespace std;
 using namespace cv;
 
-Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, double t, int size_factor);
+Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, double t, double size_factor);
 Vector<int> get_uniqe_randoms_in_range(int min, int max, int n);
 
 int main(int argc, const char * argv[])
@@ -28,14 +28,15 @@ int main(int argc, const char * argv[])
     Mat img_2 = imread("D:/Dropbox/7. Semester/VIS/mini project 3/img6.jpg", CV_LOAD_IMAGE_COLOR);
     Mat img_3 = imread("D:/Dropbox/7. Semester/VIS/mini project 3/img4.jpg", CV_LOAD_IMAGE_COLOR);
     
-    imshow("Image 1", img_1);
-    imshow("Image 2", img_2);
-    imshow("Image 3", img_3);
+    //imshow("Image 1", img_1);
+    //imshow("Image 2", img_2);
+    //imshow("Image 3", img_3);
     
-    Mat stitched = stitch_images(img_1, img_2, 2000, 4, 3.0, 5);
+    Mat stitched = stitch_images(img_1, img_2, 1000, 4, 3.0, 2.1);
+    //Mat stitched = my_stitch(img_1, img_2, 2000, 4, 3.0, 5);
     imshow("Stitched image", stitched);
     
-    Mat stitched2 = stitch_images(img_3, stitched, 10000, 4, 3.0, 3);
+    Mat stitched2 = stitch_images(img_3, img_1, 1000, 4, 3.0, 2.1);
     imshow("Stitched image 2", stitched2);
     
     waitKey(0);
@@ -44,7 +45,7 @@ int main(int argc, const char * argv[])
     return 0;
 }
 
-Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, double t, int size_factor) {
+Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, double t, double size_factor) {
     Mat result;
     
     // Find keypoints
@@ -79,19 +80,22 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
         }
     }
     
+    cout << "-- Max dist : " <<  max_dist << endl;
+    cout << "-- Min dist : " <<  min_dist << endl;
+
     std::vector< DMatch > good_matches;
 	int counter = 0;
     
-	for( int i = 0; i < descriptors_object.rows; i++ )
-	{ if( matches[i].distance < size_factor * min_dist )
-    {
-        good_matches.push_back( matches[i]);
-        counter++;
-    }}
+	for( int i = 0; i < descriptors_object.rows; i++ ){
+		if( matches[i].distance < size_factor * min_dist ){
+			good_matches.push_back( matches[i]);
+			counter++;
+		}
+	}
+
+    cout << "Matches found: " << good_matches.size() << endl;
     
 	Mat img_matches;
-    
-    cout << "Matches found: " << good_matches.size() << endl;
     
 	drawMatches( img_object, keypoints_object, img_scene, keypoints_scene,
                 good_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
@@ -100,6 +104,7 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
     imshow("Matches", img_matches);
     
     int best_score = 0;
+    double best_minimum_dist = 99999;
 	Mat best_homography;
     
     std::vector<Point2f> obj; // for all
@@ -135,19 +140,38 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
         
         // Se how many fit with their partner
         int current_score = 0;
-        for (int i = 0; i <= counter; i++ ) {
-            if(fabs(scene[i].x - projected_points[i].x) < t && fabs(scene[i].y - projected_points[i].y) < t)
-            {
-                current_score++;
-            }
-        }
+        double current_minimum_dist = 0;
+        for (int i = 0; i < projected_points.size(); i++ ) {
+			//current_minimum_dist += fabs(scene[i].x - projected_points[i].x);
+			//current_minimum_dist += fabs(scene[i].y - projected_points[i].y);
+			// Euclidian distance
+			current_minimum_dist += sqrt( pow(scene[i].x - projected_points[i].x, 2) + pow(scene[i].y - projected_points[i].y, 2));
+		}
+//        for (int i = 0; i <= counter; i++ ) {
+//            if(fabs(scene[i].x - projected_points[i].x) < t && fabs(scene[i].y - projected_points[i].y) < t)
+//            {
+//                current_score++;
+//            }
+//        }
         
         // Save the best homography
-        if(current_score > best_score)
-        {
-            best_score = current_score;
-            best_homography = current_homography;
-        }
+        if(current_minimum_dist < best_minimum_dist){
+			best_minimum_dist = current_minimum_dist;
+			cout << "RANSAC best score: " << best_minimum_dist << endl;
+			best_homography = current_homography;
+			cout << "Indexes: ";
+			for (int ri = 0; ri < random_indexes.size(); ri++){
+				cout << random_indexes[ri] << " ";
+			}
+			cout << endl;
+			cout << "RANSAC i: " << n << endl;
+			//cout << "Homography best: " << best_homography.at<double>(0,0) << endl;
+		}
+//		if(current_score > best_score){
+//            best_score = current_score;
+//            cout << "RANSAC best score: " << best_score << endl;
+//            best_homography = current_homography;
+//        }
     }
     
     result = Mat::zeros(img_object.rows + img_scene.rows, img_object.cols + img_scene.cols, img_object.type() );
@@ -162,9 +186,10 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
                                         Point( erosion_size, erosion_size ) );
     dilate(mask, mask, element);
     GaussianBlur(mask, mask, Size(21, 21), 10.0, 10.0);
-    imshow("Mask2", mask);
+    //imshow("Mask2", mask);
     
     // Copy image 1 on the first half of full image
+    //Mat half(result,cv::Rect(0,0,img_scene.cols,img_scene.rows));
     Mat half(result,cv::Rect(0,0,img_scene.cols,img_scene.rows));
     img_scene.copyTo(half, mask); // copy image2 to image1 roi
 
@@ -176,6 +201,7 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
 Vector<int> get_uniqe_randoms_in_range(int min, int max, int n) {
     Vector<int> result;
     while (result.size() < n) {
+    	//srand((unsigned)time(NULL));
         int t = rand() % (max - min) + min;
         int found = 0;
         for (int i = 0; i < result.size(); i++) {
