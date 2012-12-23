@@ -27,11 +27,22 @@ int main(int argc, const char * argv[])
     //imshow("Image 2", img_2);
     //imshow("Image 3", img_3);
     
-    Mat stitched = stitch_images(img_2, img_1, 3000, 4, 3.0, 2.5);
-    imshow("Stitched image", stitched);
     
-    Mat stitched2 = stitch_images(img_3,stitched, 10000, 4, 3.0, 2.5);
-    imshow("Stitched image 2", stitched2);
+    if (false){
+    	// Running H-forwards code
+		Mat stitched = stitch_images(img_1, img_2, 3000, 4, 3.0, 2.1);
+		imshow("Stitched image", stitched);
+
+		Mat stitched2 = stitch_images(img_3,stitched, 10000, 4, 3.0, 3.0);
+		imshow("Stitched image 2", stitched2);
+    }else{
+    	// Running H-backwards code
+		Mat stitched = stitch_images(img_2, img_1, 3000, 4, 3.0, 2.5);
+		imshow("Stitched image", stitched);
+
+		Mat stitched2 = stitch_images(img_3, stitched, 10000, 4, 3.0, 2.5);
+		imshow("Stitched image 2", stitched2);
+    }
     
     waitKey(0);
     
@@ -157,9 +168,9 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
 
     }
 
-//   my_cheat_blend(img_object, 20, 2);
-    //my_blend(img_scene, img_object, scene, obj, 1);
-    result = my_warp(img_object, img_scene, best_homography);
+    result = my_warp(img_object, img_scene, best_homography);	// My Warp!!!
+
+
 //	result = Mat::zeros(img_object.rows + img_scene.rows, img_object.cols + img_scene.cols, img_object.type() );
 //    warpPerspective(img_object, result, best_homography, Size(img_object.cols + img_scene.cols, img_object.rows));
 //
@@ -178,7 +189,7 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
 //    // Copy image 1 on the first half of full image
 //    Mat half(result,cv::Rect(0,0,img_scene.cols,img_scene.rows));
 //    img_scene.copyTo(half, mask); // copy image2 to image1 roi
-
+//
     return result;
 }
 
@@ -258,8 +269,6 @@ Mat my_warp(const Mat& obj, const Mat& scene, const Mat& homography){
 	GaussianBlur(mask,mask,Size(15,15),1000.0);
 	for (int i = 0; i < result.rows; i++){
 		for (int k = 0; k < result.cols; k++){
-//	for (int i = 100; i < 102; i++){
-//		for (int k = 100; k < 102; k++){
 			int x = k - offset_x;
 			int y = i - offset_y;
 			int z = 1;
