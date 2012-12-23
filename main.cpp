@@ -12,6 +12,8 @@ using namespace cv;
 Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, double t, double size_factor);
 Vector<int> get_uniqe_randoms_in_range(int min, int max, int n, map<string, int>& map);
 Mat my_warp(const Mat& obj, const Mat& scene, const Mat& homography);
+void my_cheat_blend(Mat& img, double delta, int channel);
+void my_blend(const Mat& img_scene, Mat& img_object, const vector<Point2f> scene_points, const vector<Point2f> obj_points, int channel=2);
 
 int main(int argc, const char * argv[])
 {
@@ -25,11 +27,11 @@ int main(int argc, const char * argv[])
     //imshow("Image 2", img_2);
     //imshow("Image 3", img_3);
     
-    Mat stitched = stitch_images(img_2, img_1, 1000, 4, 3.0, 2.1);
+    Mat stitched = stitch_images(img_2, img_1, 3000, 4, 3.0, 2.5);
     imshow("Stitched image", stitched);
     
-    //Mat stitched2 = stitch_images(img_3,stitched, 10000, 4, 3.0, 2.5);
-    Mat stitched2 = stitch_images(img_3, img_1, 10000, 4, 3.0, 2.5);
+    Mat stitched2 = stitch_images(img_3,stitched, 10000, 4, 3.0, 2.5);
+    //Mat stitched2 = stitch_images(img_3, img_1, 10000, 4, 3.0, 2.5);
     imshow("Stitched image 2", stitched2);
     
     waitKey(0);
@@ -109,7 +111,6 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
         scene.push_back( keypoints_scene[ good_matches[i].trainIdx ].pt );
     }
     
-    std::vector< DMatch > final_matches;
     map<string, int> hashmap;
     for (int n = 0; n < N; n++) {
         
@@ -136,7 +137,8 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
         // Se how many fit with their partner
         int current_score = 0;
         for (int i = 0; i < projected_points.size(); i++ ) {
-            if(fabs(scene[i].x - projected_points[i].x) < t && fabs(scene[i].y - projected_points[i].y) < t){
+            //if(fabs(scene[i].x - projected_points[i].x) < t && fabs(scene[i].y - projected_points[i].y) < t){
+            if(fabs(sqrt(pow(scene[i].x - projected_points[i].x, 2) + pow(scene[i].y - projected_points[i].y,2))) < t){
                 current_score++;
             }
         }
@@ -156,6 +158,8 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
 
     }
 
+//   my_cheat_blend(img_object, 20, 2);
+    my_blend(img_scene, img_object, scene, obj, 2);
     result = my_warp(img_object, img_scene, best_homography);
 //	result = Mat::zeros(img_object.rows + img_scene.rows, img_object.cols + img_scene.cols, img_object.type() );
 //    warpPerspective(img_object, result, best_homography, Size(img_object.cols + img_scene.cols, img_object.rows));
@@ -177,6 +181,56 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
 //    img_scene.copyTo(half, mask); // copy image2 to image1 roi
 
     return result;
+}
+
+void my_blend(const Mat& img_scene, Mat& img_object, const vector<Point2f> scene_points, const vector<Point2f> obj_points, int channel){
+	Mat hsv_scene, hsv_object;
+	cvtColor(img_scene, hsv_scene, CV_BGR2HSV);
+	cvtColor(img_object, hsv_object, CV_BGR2HSV);
+
+	vector<double> dif_ratio;
+	double val1, val2, diff;
+	for (int i = 0; i < scene_points.size(); i++){
+		val1 = hsv_scene.at<Vec3b>(scene_points[i].y, scene_points[i].x)[channel];
+		val2 = hsv_object.at<Vec3b>(obj_points[i].y, obj_points[i].x)[channel];
+		diff = val1/val2;
+		dif_ratio.push_back(diff);
+	}
+
+	double sum = 0, avg;
+	for (int i = 0; i < dif_ratio.size(); i++){
+		sum += dif_ratio[i];
+	}
+	avg = sum / dif_ratio.size();
+	cout << "Ratio: " << avg << endl;
+
+	// Do the actual blend
+	for (int i = 0; i < hsv_object.rows; i++) {
+		for (int k = 0; k < hsv_object.cols; k++) {
+			hsv_object.at<Vec3b>(i,k)[channel] = hsv_object.at<Vec3b>(i,k)[channel] * avg;
+			if (hsv_object.at<Vec3b>(i,k)[channel] <= 0){
+				hsv_object.at<Vec3b>(i,k)[channel] = 0;
+			}else if (hsv_object.at<Vec3b>(i,k)[channel] > 255){
+				hsv_object.at<Vec3b>(i,k)[channel] = 255;
+			}
+
+		}
+	}
+	cvtColor(hsv_object, img_object, CV_HSV2BGR);
+}
+void my_cheat_blend(Mat& img, double delta, int channel){
+	Mat hsv;
+	cvtColor(img, hsv, CV_BGR2HSV);
+	double max_value = 0;
+	for (int i = 0; i < hsv.rows; i++) {
+		for (int k = 0; k < hsv.cols; k++) {
+			hsv.at<Vec3b>(i,k)[channel] = hsv.at<Vec3b>(i,k)[channel] + delta;
+			if (hsv.at<Vec3b>(i,k)[channel] > max_value)
+				max_value = hsv.at<Vec3b>(i,k)[channel];
+		}
+	}
+	cout << "Max value: " << max_value << endl;
+	cvtColor(hsv, img, CV_HSV2BGR);
 }
 
 Mat my_warp(const Mat& obj, const Mat& scene, const Mat& homography){
@@ -216,6 +270,7 @@ Mat my_warp(const Mat& obj, const Mat& scene, const Mat& homography){
 
 				//cout << "x: " << nx << " y: " << ny << " z: " << nz << endl;
 				//cout << endl;
+
 				result.at<Vec3b>(i,k) = obj.at<Vec3b>((int)ny,(int)nx);
 			}
 		}
