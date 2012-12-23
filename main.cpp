@@ -31,7 +31,6 @@ int main(int argc, const char * argv[])
     imshow("Stitched image", stitched);
     
     Mat stitched2 = stitch_images(img_3,stitched, 10000, 4, 3.0, 2.5);
-    //Mat stitched2 = stitch_images(img_3, img_1, 10000, 4, 3.0, 2.5);
     imshow("Stitched image 2", stitched2);
     
     waitKey(0);
@@ -159,7 +158,7 @@ Mat stitch_images(Mat& img_object, Mat& img_scene, int N, int sample_size, doubl
     }
 
 //   my_cheat_blend(img_object, 20, 2);
-    my_blend(img_scene, img_object, scene, obj, 2);
+    //my_blend(img_scene, img_object, scene, obj, 1);
     result = my_warp(img_object, img_scene, best_homography);
 //	result = Mat::zeros(img_object.rows + img_scene.rows, img_object.cols + img_scene.cols, img_object.type() );
 //    warpPerspective(img_object, result, best_homography, Size(img_object.cols + img_scene.cols, img_object.rows));
@@ -189,25 +188,31 @@ void my_blend(const Mat& img_scene, Mat& img_object, const vector<Point2f> scene
 	cvtColor(img_object, hsv_object, CV_BGR2HSV);
 
 	vector<double> dif_ratio;
-	double val1, val2, diff;
+	double val1, val2;
+	vector<double> val1_vector, val2_vector;
 	for (int i = 0; i < scene_points.size(); i++){
 		val1 = hsv_scene.at<Vec3b>(scene_points[i].y, scene_points[i].x)[channel];
 		val2 = hsv_object.at<Vec3b>(obj_points[i].y, obj_points[i].x)[channel];
-		diff = val1/val2;
-		dif_ratio.push_back(diff);
+
+		val1_vector.push_back(val1);
+		val2_vector.push_back(val2);
 	}
 
-	double sum = 0, avg;
-	for (int i = 0; i < dif_ratio.size(); i++){
-		sum += dif_ratio[i];
+	double sum1 = 0, sum2 =0, avg1, avg2, ratio;
+	for (int i = 0; i < val1_vector.size(); i++){
+		sum1 += val1_vector[i];
+		sum2 += val2_vector[i];
 	}
-	avg = sum / dif_ratio.size();
-	cout << "Ratio: " << avg << endl;
+	avg1 = sum1 / val1_vector.size();
+	avg2 = sum2 / val2_vector.size();
+	ratio = avg1 / avg2;
+	cout << "Ratio: " << avg1 << " - "<< avg2 << " : " << ratio << endl;
+
 
 	// Do the actual blend
 	for (int i = 0; i < hsv_object.rows; i++) {
 		for (int k = 0; k < hsv_object.cols; k++) {
-			hsv_object.at<Vec3b>(i,k)[channel] = hsv_object.at<Vec3b>(i,k)[channel] * avg;
+			hsv_object.at<Vec3b>(i,k)[channel] = hsv_object.at<Vec3b>(i,k)[channel] * ratio;
 			if (hsv_object.at<Vec3b>(i,k)[channel] <= 0){
 				hsv_object.at<Vec3b>(i,k)[channel] = 0;
 			}else if (hsv_object.at<Vec3b>(i,k)[channel] > 255){
@@ -241,6 +246,16 @@ Mat my_warp(const Mat& obj, const Mat& scene, const Mat& homography){
 	offset_x = (result.cols / 2 ) - (scene.cols / 2);
 	offset_y = 0;
 	scene.copyTo(result(Rect(offset_x, offset_y, scene.cols, scene.rows)));
+
+	Mat mask;
+	double weight;
+	inRange(result, Scalar(0,0,0), Scalar(0,0,0), mask);
+	Canny(mask,mask,1.0,3*1.0);
+	dilate(mask,mask,Mat(),Point(-1,-1),20);
+	GaussianBlur(mask,mask,Size(15,15),1000.0);
+	GaussianBlur(mask,mask,Size(15,15),1000.0);
+	GaussianBlur(mask,mask,Size(15,15),1000.0);
+	GaussianBlur(mask,mask,Size(15,15),1000.0);
 	for (int i = 0; i < result.rows; i++){
 		for (int k = 0; k < result.cols; k++){
 //	for (int i = 100; i < 102; i++){
@@ -271,10 +286,26 @@ Mat my_warp(const Mat& obj, const Mat& scene, const Mat& homography){
 				//cout << "x: " << nx << " y: " << ny << " z: " << nz << endl;
 				//cout << endl;
 
-				result.at<Vec3b>(i,k) = obj.at<Vec3b>((int)ny,(int)nx);
+				if (result.at<Vec3b>(i,k) == Vec3b(0,0,0) ){	// This is not a part of the scene
+					result.at<Vec3b>(i,k) = obj.at<Vec3b>((int)ny,(int)nx);
+				}else{	// this is a part of the scene
+					if (mask.at<uchar>(i,k) != 0 ){	// if this is part of a border area
+						weight = ((double) mask.at<uchar>(i,k))/255;
+						//cout << "WEIGHT: " << weight << endl;
+						result.at<Vec3b>(i,k) = obj.at<Vec3b>((int)ny,(int)nx)*weight + result.at<Vec3b>(i,k)*(1-weight);
+					}else{
+						//result.at<Vec3b>(i,k) = obj.at<Vec3b>((int)ny,(int)nx);
+					}
+				}
 			}
 		}
 	}
+
+	//Mat mask;
+	//inRange(result, Scalar(0,0,0), Scalar(0,0,0), mask);
+	//Canny(mask,mask,1.0,3*1.0);
+	//dilate(mask,mask,Mat(),Point(-1,-1),15);
+	imshow("mask", mask);
 	return result;
 
 }
